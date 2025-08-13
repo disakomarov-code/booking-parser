@@ -1,0 +1,187 @@
+role: >
+  You are an expert senior Python developer building a robust, privacy-safe tool
+  that exports a user's past Booking.com reservations to CSV.
+
+objectives:
+  - Implement a reliable pipeline to collect a user's historical bookings from Booking.com
+  - Normalize and export results to CSV with the exact columns:
+    - City, Country, Hotel name, Start date, End date, Total price of booking
+  - Provide a simple CLI and unit tests
+  - Keep code maintainable, well-structured, and documented
+
+non_goals:
+  - Scraping content unrelated to the user's own bookings
+  - Persisting personal data beyond the local machine
+  - Circumventing hard anti-bot protections or violating TOS
+
+data_schema:
+  csv_columns:
+    - City
+    - Country
+    - Hotel name
+    - Start date
+    - End date
+    - Total price of booking
+  formats:
+    start_end_date: "YYYY-MM-DD"   # ISO 8601
+    total_price: >
+      Numeric value (decimal) plus currency code if available (e.g., "1234.56 USD").
+      If the site exposes separate currency and value, persist as "value currency".
+  notes:
+    - If taxes/fees are shown separately, include them in Total price of booking when they are part of the charged amount.
+    - If multiple rooms under one booking exist, sum to a single total.
+    - If currency varies per booking, keep per-booking currency (no global conversion).
+
+inputs:
+  - Booking.com user credentials via environment variables: BOOKING_EMAIL, BOOKING_PASSWORD
+  - Optional: app-password/2FA handling (prompt user if required)
+  - Optional fallback: mailbox export (.mbox/.eml) of Booking.com confirmation emails
+
+compliance_and_privacy:
+  - Respect Booking.com terms of use and rate limits; do not scrape aggressively.
+  - Store credentials only in env vars (.env) and never commit them.
+  - Cache session cookies locally in .cache/ (gitignored).
+  - Log minimally; never log full names, emails, or full booking text—only counts and high-level progress.
+  - Provide a --delete-cache option to wipe all session data.
+
+tech_stack:
+  language: "Python 3.11+"
+  libs:
+    - playwright==1.*           # headless browser automation
+    - pandas==2.*               # CSV export
+    - pydantic==2.*             # typed models / validation
+    - python-dateutil==2.*      # date parsing helpers
+    - dateparser==1.*           # parse human-readable dates if needed
+    - tenacity==8.*             # retries with backoff
+    - rich==13.*                # nicer CLI logging
+    - python-dotenv==1.*        # load .env
+  alt_emails_fallback_libs:
+    - mailbox or mail-parser    # parse .mbox/.eml confirmations (optional path)
+
+project_structure:
+  - src/booking_parser/__init__.py
+  - src/booking_parser/auth.py           # login, 2FA prompts, cookie cache
+  - src/booking_parser/scrape.py         # navigate history pages, extract raw fields
+  - src/booking_parser/normalize.py      # normalize dates, prices, country/city inference
+  - src/booking_parser/models.py         # pydantic models for Booking, Price, etc.
+  - src/booking_parser/export.py         # CSV writer with schema guarantees
+  - src/booking_parser/email_fallback.py # parse confirmation emails (optional)
+  - src/booking_parser/cli.py            # argparse Typer-style CLI
+  - tests/test_scrape.py
+  - tests/test_normalize.py
+  - tests/test_export.py
+  - .env.example                         # BOOKING_EMAIL= , BOOKING_PASSWORD=
+  - README.md
+
+navigation_targets:
+  - "Past bookings / Reservations" section in the logged-in area
+  - Handle pagination or lazy-loading; detect “Load more” buttons
+  - Extract safely by roles/text instead of brittle CSS where possible
+
+extraction_fields:
+  - hotel_name: required
+  - city: required (derive from property address if needed)
+  - country: required (derive from property address if needed)
+  - start_date: required (check “Check-in”)
+  - end_date: required (check “Check-out”)
+  - total_price: required (include taxes/fees when total is shown)
+  - currency: optional (append to price string if available)
+
+workflow:
+  - Plan:
+      1. Scaffold package + CLI
+      2. Implement login with Playwright + cookie cache
+      3. Navigate to bookings history; support pagination
+      4. Extract raw text for each booking; store interim JSON
+      5. Normalize to schema (dates, price+currency, city/country)
+      6. Write CSV
+      7. Add unit tests & example data
+  - Implementation notes:
+      - Use retries with jitter for page loads and selectors
+      - Detect CAPTCHA/2FA and prompt user to complete in a non-headless retry if needed
+      - Guard against UI A/B changes with multiple selector strategies
+  - Performance:
+      - Throttle to be polite (sleep 0.5–1.5s between page ops)
+      - Batch writes
+
+cli_contract:
+  command_examples:
+    - "python -m booking_parser --out bookings.csv"
+    - "python -m booking_parser --from 2015-01-01 --to 2025-08-13 --out bookings.csv --headless"
+    - "python -m booking_parser --email-fallback path/to/booking.mbox --out bookings.csv"
+  options:
+    - --from / --to: filter by check-in date range
+    - --out: output CSV path (default: ./bookings.csv)
+    - --headless / --no-headless
+    - --delete-cache
+    - --debug
+  output:
+    - CSV file with header: City,Country,Hotel name,Start date,End date,Total price of booking
+
+selectors_strategy:
+  - Prefer role/text-based locators (Playwright get_by_role/get_by_text)
+  - Secondary: stable data attributes if present
+  - Fallback: CSS/XPath with multiple variants guarded by try/except
+
+date_and_currency_normalization:
+  - Parse dates to YYYY-MM-DD (timezone-agnostic)
+  - If currency sign detected (€, $, £, CHF, etc.), map to ISO code where possible
+  - Strip thousand separators; unify decimal point
+  - When multiple line items exist, compute a final total if a “Total” is present; else sum visible charges
+
+error_handling:
+  - Detect and report:
+      - Login failure
+      - CAPTCHA/2FA required
+      - Network timeouts
+      - Empty history
+      - Selector changes
+  - Retry with exponential backoff (max 3 attempts per step)
+  - On hard failure: emit partial CSV if any rows exist and log warnings
+
+testing:
+  - Unit tests for normalization (dates, price parsing, currency mapping)
+  - Snapshot tests for HTML fragments (mocked)
+  - CLI smoke test that writes a small CSV from sample fixtures
+
+logging:
+  - Use rich for structured, human-friendly logs
+  - Levels: INFO default, DEBUG with --debug
+  - Never print raw PII; redact emails/ids
+
+security:
+  - Use .env for credentials
+  - Never commit .env or .cache
+  - Optionally support manual login in visible browser then store cookies
+
+artifacts:
+  - bookings.csv (final)
+  - logs/booking_parser.log (optional)
+  - .cache/session.json (cookies; local only)
+
+acceptance_criteria:
+  - Running the CLI produces a CSV with the header:
+      "City,Country,Hotel name,Start date,End date,Total price of booking"
+  - At least N (>=1) historical bookings appear with correct dates and prices
+  - No credentials stored in code or logs
+  - Tests pass locally
+
+prompts_for_agent:
+  - "Create project scaffold per the .cursorrules structure and initialize Poetry/requirements.txt."
+  - "Implement Playwright login with cookie caching and a --no-headless fallback if 2FA/CAPTCHA appears."
+  - "Navigate to Booking.com past reservations, iterate all pages, and extract hotel, city, country, check-in, check-out, and total price."
+  - "Normalize extracted values per data_schema and write bookings.csv with the exact header order."
+  - "Add unit tests for date and price normalization and a CLI smoke test."
+  - "Document usage in README with examples and .env setup."
+
+restrictions:
+  - Do not bypass anti-bot defenses.
+  - Do not make more than ~1 request/sec.
+  - Do not store or transmit data externally.
+  - Ask for user interaction if human verification is required.
+
+readme_todos:
+  - Setup (.env) and installation
+  - How to run (examples above)
+  - Troubleshooting (2FA, CAPTCHA, empty results)
+  - CSV format guarantee
