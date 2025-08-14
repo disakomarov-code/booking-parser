@@ -1,0 +1,7 @@
+com\bookingparser\cli\Cli.class
+com\bookingparser\export\Exporter.class
+com\bookingparser\model\BookingNormalized.class
+com\bookingparser\normalize\NormalizerUtil.class
+com\bookingparser\model\BookingRaw.class
+com\bookingparser\normalize\NormalizerUtil$ParsedPrice.class
+com\bookingparser\model\Price.class
