@@ -1,0 +1,9 @@
+playwright==1.*
+pandas==2.*
+pydantic==2.*
+python-dateutil==2.*
+dateparser==1.*
+tenacity==8.*
+rich==13.*
+python-dotenv==1.*
+pytest==8.*
